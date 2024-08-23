@@ -283,11 +283,11 @@ def getRecommandedAddress(request):
         # set up cursor
         cursor = conn.cursor(dictionary=True) #creates a cursor object that allows you to execute SQL queries, ensures that the results are returned as dictionaries, where the column names are the keys.
          # Prepare the query1 # Fetch results1 - table 1
-        cursor.execute("SELECT * FROM address_v2_training_data WHERE uid = %s", (uid,))
+        cursor.execute("SELECT * FROM address_v2_training_data_test WHERE uid = %s", (uid,))
         result_1=cursor.fetchall()
 
         # Prepare the query2    # Fetch results2 - table 2
-        cursor.execute("SELECT * FROM address_v2_suggestion WHERE uid = %s", (uid,))
+        cursor.execute("SELECT * FROM address_v2_suggestion_test WHERE uid = %s", (uid,))
         result_2=cursor.fetchall()
 
         cursor.close()
