@@ -51,12 +51,16 @@ def haversine(lat1, lon1, lat2, lon2):
     r = 6371.0
     return c * r
 
-def process_location_data(df_raw, target_lat, target_lon):
-  if target_lat!=999.00 and target_lon!=999.00:
-    # 分割 start_latlng 为 latitude 和 longitude
+def process_has_lat_lng_data(df_raw, target_lat, target_lon,start_address, hour_type, is_holiday,dayofweek,mapping_data):
+   #### DATA PREPROCESSING ####
+   # 分割 start_latlng 为 latitude 和 longitude
     df_raw[['latitude', 'longitude']] = df_raw['start_latlng'].str.split(',', expand=True)
     df_raw['latitude'] = df_raw['latitude'].astype(float)
     df_raw['longitude'] = df_raw['longitude'].astype(float)
+  # 分割 end_latlng 为 end_latitude 和 end_longitude
+    df_raw[['end_latitude', 'end_longitude']] = df_raw['end_latlng'].str.split(',', expand=True)
+  #將下車地址進位到小數點2位
+    df_raw['end_address_rounded']=df_raw['end_latitude'].astype(float).round(2).astype(str) + ',' + df_raw['end_longitude'].astype(float).round(2).astype(str)
 
     # 计算目标经纬度与历史上车点的距离
     df_raw['distance_km'] = df_raw.apply(lambda row: haversine(row['latitude'], row['longitude'], target_lat, target_lon), axis=1)
@@ -74,41 +78,19 @@ def process_location_data(df_raw, target_lat, target_lon):
     df_sorted = df_raw.sort_values(by=['count', 'created_at'], ascending=[False, False])
 
     # 去除重复的下车点，仅保留前 20 笔记录
-    df_unique = df_sorted.drop_duplicates(subset='end_latlng', keep='first')
+    df_unique_all = df_sorted.drop_duplicates(subset='end_latlng', keep='first')
+    df_unique=df_unique_all[df_unique_all['end_address_rounded']!=start_address]
     top_20_unique = df_unique['end_latlng'].head(20)
 
     # 撈取原始数据中的 top 20 下车点
     df_filtered = df_raw[df_raw['end_latlng'].isin(top_20_unique)]
 
     # 返回所需字段
-    result = df_filtered.loc[:,['start_latlng', 'end_latlng', 'hour_type', 'is_holiday','dayofweek']]
-  
-  else: 
+    df_process = df_filtered.loc[:,['start_latlng', 'end_latlng', 'hour_type', 'is_holiday','dayofweek']]
 
-    # 计算下车点记录次数
-    df_raw['count'] = df_raw.groupby('end_latlng')['end_latlng'].transform('count')
+    #### MODEL BUILDING ####
 
-    # 正规化时间字段
-    df_raw['created_at'] = pd.to_datetime(df_raw['created_at'])
-
-    # 根据下车点记录次数以及时间由大到小排序
-    df_sorted = df_raw.sort_values(by=['count', 'created_at'], ascending=[False, False])
-
-    # 去除重复的下车点，仅保留前 20 笔记录
-    df_unique = df_sorted.drop_duplicates(subset='end_latlng', keep='first')
-    top_20_unique = df_unique['end_latlng'].head(20)
-
-    # 撈取原始数据中的 top 20 下车点
-    df_filtered = df_raw[df_raw['end_latlng'].isin(top_20_unique)]
-
-    # 返回所需字段
-    result = df_filtered.loc[:,['end_latlng', 'hour_type', 'is_holiday','dayofweek']]
-
-  return result
-
-
-def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,mapping_data,target_lat,target_lon):
-    # 创建包含用户输入数据的 DataFrame
+        # 创建包含用户输入数据的 DataFrame
     data = {
         'start_latlng': [start_address],
         'hour_type': [hour_type],
@@ -124,14 +106,7 @@ def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,ma
     c_vars = ['start_latlng', 'hour_type', 'is_holiday','dayofweek']
     distinct_end_latlng = df_process['end_latlng'].unique().tolist()
 
-
-    if target_lat!=999.00 or target_lon!=999.00:
-
-      for end_location in distinct_end_latlng:
-        
-        # Change the data type of 'dayofweek' from int to string
-        df_process['dayofweek'] = df_process['dayofweek'].astype(str)
-        df_process['is_holiday'] = df_process['is_holiday'].astype(str)
+    for end_location in distinct_end_latlng:
 
         # 创建目标变量 is_end_address
         df_process['is_end_address'] = df_process['end_latlng'].apply(lambda x: 1 if x == end_location else 0)
@@ -161,12 +136,61 @@ def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,ma
             'prob': probability_predictions
         })
         final_result = pd.concat([final_result, temp_result], ignore_index=True)
-    
-    else:
-      for end_location in distinct_end_latlng:
-        # Change the data type of 'dayofweek' from int to string
-        df_process['dayofweek'] = df_process['dayofweek'].astype(str)
-        df_process['is_holiday'] = df_process['is_holiday'].astype(str)
+    # 按概率排序并获取前 5 个结果
+    final_result = final_result.sort_values(by='prob', ascending=False).reset_index(drop=True)
+    top_result = final_result.head(5)
+
+    # Perform mapping
+    mapping_result = pd.merge(top_result, mapping_data, how='left', on='end_latlng')
+    # Filter out rows where 'end_address' is blank or null
+    results = mapping_result[mapping_result['end_address'].notna() & (mapping_result['end_address'] != '')]
+
+    return results
+
+def process_no_lat_lng_data(df_raw, target_lat, target_lon,start_address, hour_type, is_holiday,dayofweek,mapping_data):
+   #### DATA PREPROCESSING ####
+  # 分割 end_latlng 为 end_latitude 和 end_longitude
+    df_raw[['end_latitude', 'end_longitude']] = df_raw['end_latlng'].str.split(',', expand=True)
+  #將下車地址進位到小數點2位
+    df_raw['end_address_rounded']=df_raw['end_latitude'].astype(float).round(2).astype(str) + ',' + df_raw['end_longitude'].astype(float).round(2).astype(str)
+  # 计算下车点记录次数
+    df_raw['count'] = df_raw.groupby('end_latlng')['end_latlng'].transform('count')
+
+    # 正规化时间字段
+    df_raw['created_at'] = pd.to_datetime(df_raw['created_at'])
+
+    # 根据下车点记录次数以及时间由大到小排序
+    df_sorted = df_raw.sort_values(by=['count', 'created_at'], ascending=[False, False])
+
+    # 去除重复的下车点，仅保留前 20 笔记录
+    df_unique_all = df_sorted.drop_duplicates(subset='end_latlng', keep='first')
+    df_unique=df_unique_all[df_unique_all['end_address_rounded']!=start_address]
+    top_20_unique = df_unique['end_latlng'].head(20)
+
+    # 撈取原始数据中的 top 20 下车点
+    df_filtered = df_raw[df_raw['end_latlng'].isin(top_20_unique)]
+
+    # 返回所需字段
+    df_process = df_filtered.loc[:,['end_latlng', 'hour_type', 'is_holiday','dayofweek']]
+  
+  #### MODEL BUILDING ####
+    # 创建包含用户输入数据的 DataFrame
+    data = {
+        'start_latlng': [start_address],
+        'hour_type': [hour_type],
+        'is_holiday': [is_holiday],
+        'dayofweek':[dayofweek],
+        'is_end_address': [np.nan]  # 预测值未知，因此设置为 NaN
+    }
+    df_test = pd.DataFrame(data)
+
+    final_result = pd.DataFrame(columns=['end_latlng', 'prob'])  # 初始化结果 DataFrame
+
+    # 循环遍历每一个独特的 end_latlng
+    c_vars = ['start_latlng', 'hour_type', 'is_holiday','dayofweek']
+    distinct_end_latlng = df_process['end_latlng'].unique().tolist()
+
+    for end_location in distinct_end_latlng:
 
         # 创建目标变量 is_end_address
         df_process['is_end_address'] = df_process['end_latlng'].apply(lambda x: 1 if x == end_location else 0)
@@ -299,8 +323,14 @@ def getRecommandedAddress(request):
 
     raw_result=pd.DataFrame(result_1)
     map_result=pd.DataFrame(result_2)
-    processed_data=process_location_data(raw_result,start_lat_rounded,start_lng_rounded)
-    top_recommend_df=recommend_list(processed_data, start_address, hour_type, is_holiday,str(weekday),map_result,start_lat_rounded,start_lng_rounded)
+
+    if start_lat_rounded!=999.00 and start_lng_rounded!=999.00:
+       top_recommend_df=process_has_lat_lng_data(raw_result, start_lat_rounded, start_lng_rounded,start_address, hour_type, is_holiday,str(weekday),map_result)
+    
+    else:
+       top_recommend_df=process_no_lat_lng_data(raw_result, start_lat_rounded, start_lng_rounded,start_address, hour_type, is_holiday,str(weekday),map_result)
+       
+
     top_recommend_result=top_recommend_df.to_dict("records")
 
     # Record the end time
