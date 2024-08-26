@@ -54,7 +54,7 @@ def haversine(lat1, lon1, lat2, lon2):
 def process_location_data(df_raw, target_lat, target_lon):
   if target_lat!=999.00 and target_lon!=999.00:
     # 分割 start_latlng 为 latitude 和 longitude
-    df_raw[['latitude', 'longitude']] = df_raw['start_lating'].str.split(',', expand=True)
+    df_raw[['latitude', 'longitude']] = df_raw['start_latlng'].str.split(',', expand=True)
     df_raw['latitude'] = df_raw['latitude'].astype(float)
     df_raw['longitude'] = df_raw['longitude'].astype(float)
 
@@ -65,7 +65,7 @@ def process_location_data(df_raw, target_lat, target_lon):
     df_raw = df_raw[df_raw['distance_km'] < 30]
 
     # 计算下车点记录次数
-    df_raw['count'] = df_raw.groupby('end_lating')['end_lating'].transform('count')
+    df_raw['count'] = df_raw.groupby('end_latlng')['end_latlng'].transform('count')
 
     # 正规化时间字段
     df_raw['created_at'] = pd.to_datetime(df_raw['created_at'])
@@ -74,19 +74,19 @@ def process_location_data(df_raw, target_lat, target_lon):
     df_sorted = df_raw.sort_values(by=['count', 'created_at'], ascending=[False, False])
 
     # 去除重复的下车点，仅保留前 20 笔记录
-    df_unique = df_sorted.drop_duplicates(subset='end_lating', keep='first')
-    top_20_unique = df_unique['end_lating'].head(20)
+    df_unique = df_sorted.drop_duplicates(subset='end_latlng', keep='first')
+    top_20_unique = df_unique['end_latlng'].head(20)
 
     # 撈取原始数据中的 top 20 下车点
-    df_filtered = df_raw[df_raw['end_lating'].isin(top_20_unique)]
+    df_filtered = df_raw[df_raw['end_latlng'].isin(top_20_unique)]
 
     # 返回所需字段
-    result = df_filtered.loc[:,['start_lating', 'end_lating', 'hour_type', 'is_holiday','dayofweek']]
+    result = df_filtered.loc[:,['start_latlng', 'end_latlng', 'hour_type', 'is_holiday','dayofweek']]
   
   else: 
 
     # 计算下车点记录次数
-    df_raw['count'] = df_raw.groupby('end_lating')['end_lating'].transform('count')
+    df_raw['count'] = df_raw.groupby('end_latlng')['end_latlng'].transform('count')
 
     # 正规化时间字段
     df_raw['created_at'] = pd.to_datetime(df_raw['created_at'])
@@ -95,14 +95,14 @@ def process_location_data(df_raw, target_lat, target_lon):
     df_sorted = df_raw.sort_values(by=['count', 'created_at'], ascending=[False, False])
 
     # 去除重复的下车点，仅保留前 20 笔记录
-    df_unique = df_sorted.drop_duplicates(subset='end_lating', keep='first')
-    top_20_unique = df_unique['end_lating'].head(20)
+    df_unique = df_sorted.drop_duplicates(subset='end_latlng', keep='first')
+    top_20_unique = df_unique['end_latlng'].head(20)
 
     # 撈取原始数据中的 top 20 下车点
-    df_filtered = df_raw[df_raw['end_lating'].isin(top_20_unique)]
+    df_filtered = df_raw[df_raw['end_latlng'].isin(top_20_unique)]
 
     # 返回所需字段
-    result = df_filtered.loc[:,['end_lating', 'hour_type', 'is_holiday','dayofweek']]
+    result = df_filtered.loc[:,['end_latlng', 'hour_type', 'is_holiday','dayofweek']]
 
   return result
 
@@ -110,7 +110,7 @@ def process_location_data(df_raw, target_lat, target_lon):
 def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,mapping_data,target_lat,target_lon):
     # 创建包含用户输入数据的 DataFrame
     data = {
-        'start_lating': [start_address],
+        'start_latlng': [start_address],
         'hour_type': [hour_type],
         'is_holiday': [is_holiday],
         'dayofweek':[dayofweek],
@@ -118,11 +118,11 @@ def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,ma
     }
     df_test = pd.DataFrame(data)
 
-    final_result = pd.DataFrame(columns=['end_lating', 'prob'])  # 初始化结果 DataFrame
+    final_result = pd.DataFrame(columns=['end_latlng', 'prob'])  # 初始化结果 DataFrame
 
     # 循环遍历每一个独特的 end_latlng
-    c_vars = ['start_lating', 'hour_type', 'is_holiday','dayofweek']
-    distinct_end_latlng = df_process['end_lating'].unique().tolist()
+    c_vars = ['start_latlng', 'hour_type', 'is_holiday','dayofweek']
+    distinct_end_latlng = df_process['end_latlng'].unique().tolist()
 
 
     if target_lat!=999.00 or target_lon!=999.00:
@@ -134,14 +134,14 @@ def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,ma
         df_process['is_holiday'] = df_process['is_holiday'].astype(str)
 
         # 创建目标变量 is_end_address
-        df_process['is_end_address'] = df_process['end_lating'].apply(lambda x: 1 if x == end_location else 0)
+        df_process['is_end_address'] = df_process['end_latlng'].apply(lambda x: 1 if x == end_location else 0)
 
         # 合并处理数据和测试数据
-        df_combined = pd.concat([df_process.loc[:,['start_lating', 'hour_type', 'is_holiday','dayofweek', 'is_end_address']], df_test], ignore_index=True)
+        df_combined = pd.concat([df_process.loc[:,['start_latlng', 'hour_type', 'is_holiday','dayofweek', 'is_end_address']], df_test], ignore_index=True)
 
         # 编码类别特征
-        encoded_array = OrdinalEncoder().fit_transform(df_combined.loc[:,['start_lating', 'hour_type', 'is_holiday','dayofweek']])
-        encoded_df_p = pd.DataFrame(encoded_array, columns=['start_lating', 'hour_type', 'is_holiday','dayofweek'])
+        encoded_array = OrdinalEncoder().fit_transform(df_combined.loc[:,['start_latlng', 'hour_type', 'is_holiday','dayofweek']])
+        encoded_df_p = pd.DataFrame(encoded_array, columns=['start_latlng', 'hour_type', 'is_holiday','dayofweek'])
         encoded_df = pd.concat([encoded_df_p, df_combined[['is_end_address']].reset_index(drop=True)], axis=1)
 
         # 分割训练数据和预测数据
@@ -150,14 +150,14 @@ def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,ma
 
         # 训练模型
         model = CategoricalNB()
-        model.fit(train_data.loc[:,['start_lating', 'hour_type', 'is_holiday','dayofweek']], train_data['is_end_address'])
+        model.fit(train_data.loc[:,['start_latlng', 'hour_type', 'is_holiday','dayofweek']], train_data['is_end_address'])
 
         # 预测概率
-        probability_predictions = model.predict_proba(predict_data.loc[:,['start_lating', 'hour_type', 'is_holiday','dayofweek']])[:, 1]
+        probability_predictions = model.predict_proba(predict_data.loc[:,['start_latlng', 'hour_type', 'is_holiday','dayofweek']])[:, 1]
 
         # 存储结果
         temp_result = pd.DataFrame({
-            'end_lating': [end_location],
+            'end_latlng': [end_location],
             'prob': probability_predictions
         })
         final_result = pd.concat([final_result, temp_result], ignore_index=True)
@@ -169,7 +169,7 @@ def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,ma
         df_process['is_holiday'] = df_process['is_holiday'].astype(str)
 
         # 创建目标变量 is_end_address
-        df_process['is_end_address'] = df_process['end_lating'].apply(lambda x: 1 if x == end_location else 0)
+        df_process['is_end_address'] = df_process['end_latlng'].apply(lambda x: 1 if x == end_location else 0)
 
         # 合并处理数据和测试数据
         df_combined = pd.concat([df_process.loc[:,[ 'hour_type', 'is_holiday','dayofweek', 'is_end_address']], df_test.loc[:,[ 'hour_type', 'is_holiday','dayofweek', 'is_end_address']]], ignore_index=True)
@@ -192,7 +192,7 @@ def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,ma
 
         # 存储结果
         temp_result = pd.DataFrame({
-            'end_lating': [end_location],
+            'end_latlng': [end_location],
             'prob': probability_predictions
         })
         final_result = pd.concat([final_result, temp_result], ignore_index=True)
@@ -203,7 +203,7 @@ def recommend_list(df_process, start_address, hour_type, is_holiday,dayofweek,ma
     top_result = final_result.head(5)
 
     # Perform mapping
-    mapping_result = pd.merge(top_result, mapping_data, how='left', on='end_lating')
+    mapping_result = pd.merge(top_result, mapping_data, how='left', on='end_latlng')
     # Filter out rows where 'end_address' is blank or null
     results = mapping_result[mapping_result['end_address'].notna() & (mapping_result['end_address'] != '')]
 
@@ -283,11 +283,11 @@ def getRecommandedAddress(request):
         # set up cursor
         cursor = conn.cursor(dictionary=True) #creates a cursor object that allows you to execute SQL queries, ensures that the results are returned as dictionaries, where the column names are the keys.
          # Prepare the query1 # Fetch results1 - table 1
-        cursor.execute("SELECT * FROM address_v2_training_data WHERE uid = %s", (uid,))
+        cursor.execute("SELECT * FROM address_v2_training_data_test WHERE uid = %s", (uid,))
         result_1=cursor.fetchall()
 
         # Prepare the query2    # Fetch results2 - table 2
-        cursor.execute("SELECT * FROM address_v2_suggestion WHERE uid = %s", (uid,))
+        cursor.execute("SELECT * FROM address_v2_suggestion_test WHERE uid = %s", (uid,))
         result_2=cursor.fetchall()
 
         cursor.close()
@@ -313,8 +313,6 @@ def getRecommandedAddress(request):
     execution_time_str = f"{execution_time_seconds:.6f} seconds"
     #output 
     response_data=json.dumps({"data": top_recommend_result,"execution_time":execution_time_str}, ensure_ascii=False)
-    # # Return using jsonify with the appropriate content type
-    # response = jsonify(json.loads(response_data))
-    # response.headers.set('Content-Type', 'application/json; charset=utf-8')
+
 
     return response_data
