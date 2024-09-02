@@ -100,10 +100,19 @@ def process_has_lat_lng_data(df_raw, target_lat, target_lon,start_address, hour_
     }
     df_test = pd.DataFrame(data)
 
+        # 建立一個df 存取最大index
+    default_data = {
+        'start_latlng': [start_address],
+        'hour_type': ['午夜'],
+        'is_holiday': ['1'],
+        'dayofweek':['7'],
+        'is_end_address': [1]  # 预测值未知，因此设置为 NaN
+    }
+    df_default = pd.DataFrame(default_data)
+
     final_result = pd.DataFrame(columns=['end_latlng', 'prob'])  # 初始化结果 DataFrame
 
     # 循环遍历每一个独特的 end_latlng
-    c_vars = ['start_latlng', 'hour_type', 'is_holiday','dayofweek']
     distinct_end_latlng = df_process['end_latlng'].unique().tolist()
 
     for end_location in distinct_end_latlng:
@@ -112,12 +121,26 @@ def process_has_lat_lng_data(df_raw, target_lat, target_lon,start_address, hour_
         df_process['is_end_address'] = df_process['end_latlng'].apply(lambda x: 1 if x == end_location else 0)
 
         # 合并处理数据和测试数据
-        df_combined = pd.concat([df_process.loc[:,['start_latlng', 'hour_type', 'is_holiday','dayofweek', 'is_end_address']], df_test], ignore_index=True)
+        df_combined_1 = pd.concat([df_process.loc[:,['start_latlng', 'hour_type', 'is_holiday','dayofweek', 'is_end_address']], df_test], ignore_index=True)
+        df_combined = pd.concat([df_combined_1[['start_latlng', 'hour_type', 'is_holiday','dayofweek', 'is_end_address']], df_default], ignore_index=True)
 
-        # 编码类别特征
-        encoded_array = OrdinalEncoder().fit_transform(df_combined.loc[:,['start_latlng', 'hour_type', 'is_holiday','dayofweek']])
-        encoded_df_p = pd.DataFrame(encoded_array, columns=['start_latlng', 'hour_type', 'is_holiday','dayofweek'])
-        encoded_df = pd.concat([encoded_df_p, df_combined[['is_end_address']].reset_index(drop=True)], axis=1)
+        # Define the categories explicitly for features handled by OrdinalEncoder
+        categories = {
+            'start_latlng':df_combined['start_latlng'].unique().tolist(), #start_latlng
+            'hour_type':['凌晨', '早尖峰', '早離峰', '午離峰','晚尖峰','小晚尖','午夜'],  # hour_type
+            'is_holiday':['0', '1'],            # is_holiday
+            'dayofweek':['1', '2', '3', '4', '5', '6', '7']  # dayofweek
+            }
+
+
+        # Encode other features with OrdinalEncoder using explicit categories
+        ordinal_encoder = OrdinalEncoder(categories=[categories['start_latlng'],categories['hour_type'], categories['is_holiday'], categories['dayofweek']])
+        ordinal_encoded=ordinal_encoder.fit_transform(df_combined[['start_latlng','hour_type', 'is_holiday', 'dayofweek']])
+        encoded_df = pd.DataFrame(ordinal_encoded, columns=['start_latlng','hour_type', 'is_holiday', 'dayofweek'])
+
+
+        # # Combine encoded features
+        encoded_df['is_end_address'] = df_combined['is_end_address'].reset_index(drop=True)
 
         # 分割训练数据和预测数据
         train_data = encoded_df[encoded_df['is_end_address'].notna()]
@@ -128,7 +151,13 @@ def process_has_lat_lng_data(df_raw, target_lat, target_lon,start_address, hour_
         model.fit(train_data.loc[:,['start_latlng', 'hour_type', 'is_holiday','dayofweek']], train_data['is_end_address'])
 
         # 预测概率
-        probability_predictions = model.predict_proba(predict_data.loc[:,['start_latlng', 'hour_type', 'is_holiday','dayofweek']])[:, 1]
+        unique_classes = train_data['is_end_address'].nunique() # 確認model的training data的y值有幾個
+
+        if unique_classes > 1:
+          probability_predictions = model.predict_proba(predict_data[['start_latlng', 'hour_type', 'is_holiday', 'dayofweek']])[:,1]
+        else:
+             # Handle the single-class case
+          probability_predictions = np.ones(len(predict_data))
 
         # 存储结果
         temp_result = pd.DataFrame({
@@ -184,10 +213,18 @@ def process_no_lat_lng_data(df_raw, target_lat, target_lon,start_address, hour_t
     }
     df_test = pd.DataFrame(data)
 
+    # 建立一個df 存取最大index
+    default_data = {
+        'hour_type': ['午夜'],
+        'is_holiday': ['1'],
+        'dayofweek':['7'],
+        'is_end_address': [1]  # 预测值未知，因此设置为 NaN
+    }
+    df_default = pd.DataFrame(default_data)
+
     final_result = pd.DataFrame(columns=['end_latlng', 'prob'])  # 初始化结果 DataFrame
 
     # 循环遍历每一个独特的 end_latlng
-    c_vars = ['start_latlng', 'hour_type', 'is_holiday','dayofweek']
     distinct_end_latlng = df_process['end_latlng'].unique().tolist()
 
     for end_location in distinct_end_latlng:
@@ -196,12 +233,24 @@ def process_no_lat_lng_data(df_raw, target_lat, target_lon,start_address, hour_t
         df_process['is_end_address'] = df_process['end_latlng'].apply(lambda x: 1 if x == end_location else 0)
 
         # 合并处理数据和测试数据
-        df_combined = pd.concat([df_process.loc[:,[ 'hour_type', 'is_holiday','dayofweek', 'is_end_address']], df_test.loc[:,[ 'hour_type', 'is_holiday','dayofweek', 'is_end_address']]], ignore_index=True)
+        df_combined_1 = pd.concat([df_process.loc[:,[ 'hour_type', 'is_holiday','dayofweek', 'is_end_address']], df_test.loc[:,[ 'hour_type', 'is_holiday','dayofweek', 'is_end_address']]], ignore_index=True)
+        df_combined = pd.concat([df_combined_1[[ 'hour_type', 'is_holiday','dayofweek', 'is_end_address']], df_default], ignore_index=True)
 
-        # 编码类别特征
-        encoded_array = OrdinalEncoder().fit_transform(df_combined.loc[:,[ 'hour_type', 'is_holiday','dayofweek']])
-        encoded_df_p = pd.DataFrame(encoded_array, columns=[ 'hour_type', 'is_holiday','dayofweek'])
-        encoded_df = pd.concat([encoded_df_p, df_combined[['is_end_address']].reset_index(drop=True)], axis=1)
+        # Define the categories explicitly for features handled by OrdinalEncoder
+        categories = {
+            'hour_type':['凌晨', '早尖峰', '早離峰', '午離峰','晚尖峰','小晚尖','午夜'],  # hour_type
+            'is_holiday':['0', '1'],            # is_holiday
+            'dayofweek':['1', '2', '3', '4', '5', '6', '7']  # dayofweek
+            }
+
+        # Encode other features with OrdinalEncoder using explicit categories
+        ordinal_encoder = OrdinalEncoder(categories=[categories['hour_type'], categories['is_holiday'], categories['dayofweek']])
+        ordinal_encoded=ordinal_encoder.fit_transform(df_combined[['hour_type', 'is_holiday', 'dayofweek']])
+        encoded_df = pd.DataFrame(ordinal_encoded, columns=['hour_type', 'is_holiday', 'dayofweek'])
+
+
+        # # Combine encoded features
+        encoded_df['is_end_address'] = df_combined['is_end_address'].reset_index(drop=True)
 
         # 分割训练数据和预测数据
         train_data = encoded_df[encoded_df['is_end_address'].notna()]
@@ -212,7 +261,13 @@ def process_no_lat_lng_data(df_raw, target_lat, target_lon,start_address, hour_t
         model.fit(train_data.loc[:,['hour_type', 'is_holiday','dayofweek']], train_data['is_end_address'])
 
         # 预测概率
-        probability_predictions = model.predict_proba(predict_data.loc[:,[ 'hour_type', 'is_holiday','dayofweek']])[:, 1]
+        unique_classes = train_data['is_end_address'].nunique() # 確認model的training data的y值有幾個
+
+        if unique_classes > 1:
+          probability_predictions = model.predict_proba(predict_data[[ 'hour_type', 'is_holiday', 'dayofweek']])[:,1]
+        else:
+             # Handle the single-class case, for example, by setting a default probability
+          probability_predictions = np.ones(len(predict_data))
 
         # 存储结果
         temp_result = pd.DataFrame({
